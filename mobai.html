@@ -1,0 +1,1555 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D-H Kinematics 3D Simulator | จลนศาสตร์หุ่นยนต์ Denavit-Hartenberg</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Noto Sans Thai -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Three.js & OrbitControls via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans Thai"', 'Inter', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans Thai', 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #e2e8f0;
+            height: 100dvh;
+            width: 100vw;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        /* Touch-friendly Range Slider Styling (>= 40px touch area) */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+            height: 36px;
+            touch-action: pan-x;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 22px;
+            width: 22px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            margin-top: -8px;
+            border: 2px solid #0f172a;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 3px;
+        }
+        /* Touch-friendly buttons & inputs */
+        .touch-btn {
+            min-height: 40px;
+            min-width: 40px;
+        }
+        .touch-input {
+            min-height: 38px;
+            font-size: 13px;
+        }
+        .matrix-bracket {
+            position: relative;
+            padding: 6px 10px;
+        }
+        .matrix-bracket::before,
+        .matrix-bracket::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            border: 2px solid #64748b;
+        }
+        .matrix-bracket::before {
+            left: 0;
+            border-right: none;
+            border-radius: 4px 0 0 4px;
+        }
+        .matrix-bracket::after {
+            right: 0;
+            border-left: none;
+            border-radius: 0 4px 4px 0;
+        }
+        .axis-label {
+            position: absolute;
+            pointer-events: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 1px 4px;
+            border-radius: 3px;
+            transform: translate(-50%, -50%);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+            white-space: nowrap;
+        }
+        /* Smooth Drawer & Panel Transitions */
+        .floating-panel {
+            transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+        }
+        .panel-collapsed-body {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="relative h-[100dvh] w-screen overflow-hidden select-none bg-slate-950">
+
+    <!-- Fullscreen 3D Canvas Layer (Always 100% Viewport) -->
+    <div id="canvas-container" class="absolute inset-0 w-full h-full overflow-hidden cursor-grab active:cursor-grabbing z-0">
+        <!-- 2D Projected Axis Labels Layer -->
+        <div id="labels-container" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+    </div>
+
+    <!-- Top Toolbar & Quick Panel Toggle Bar -->
+    <header id="main-header" class="absolute top-0 left-0 right-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-2.5 sm:px-4 py-2 flex flex-col gap-2 shadow-xl transition-transform duration-300">
+        <div class="flex items-center justify-between gap-2">
+            <!-- Brand Title -->
+            <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 shrink-0">
+                    <i data-lucide="bot" class="w-5 h-5 text-white"></i>
+                </div>
+                <div class="min-w-0">
+                    <h1 class="text-xs sm:text-sm md:text-base font-bold text-white tracking-tight truncate flex items-center gap-2">
+                        D-H Kinematics 3D Simulator
+                        <span class="hidden md:inline-block text-[11px] font-mono font-normal px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">Standard D-H (Niku)</span>
+                    </h1>
+                    <p class="text-[10px] sm:text-[11px] text-slate-400 truncate">จลนคณิตศาสตร์เดินหน้าและเฟรมพิกัด Denavit-Hartenberg</p>
+                </div>
+            </div>
+
+            <!-- Right Global Controls: Preset Selector & Zen Mode -->
+            <div class="flex items-center gap-1.5 shrink-0">
+                <select id="preset-select" onchange="loadPreset(this.value)" aria-label="เลือกตัวอย่างหุ่นยนต์"
+                    class="touch-btn bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-sky-500 max-w-[135px] sm:max-w-none">
+                    <option value="2dof">ตัวอย่าง 2.24: 2-DOF Planar</option>
+                    <option value="3dof_ex225">ตัวอย่าง 2.25: 3-DOF Articulated</option>
+                    <option value="3dof_proj1" selected>โครงงานที่ 1: 3-DOF Design</option>
+                    <option value="6dof">ตัวอย่าง 2.26: 6-DOF Articulated</option>
+                </select>
+
+                <button onclick="toggleZenMode()" id="btn-zen-mode" title="ซ่อนหน้าต่างทั้งหมด (ดู 3D เต็มจอ)"
+                    class="touch-btn px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 transition flex items-center gap-1.5">
+                    <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">เต็มจอ 3D</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Window Toggle Pills (Horizontal Scrollable on Mobile) -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            <span class="text-[11px] text-slate-400 shrink-0 mr-0.5">หน้าต่าง:</span>
+            <button onclick="togglePanel('dh')" id="toggle-btn-dh"
+                class="min-h-[34px] px-2.5 py-1 text-xs font-medium rounded-lg border transition flex items-center gap-1.5 shrink-0 bg-sky-500/20 text-sky-300 border-sky-500/40">
+                <i data-lucide="sliders" class="w-3.5 h-3.5"></i> ตาราง D-H & ปรับแกน
+            </button>
+            <button onclick="togglePanel('step')" id="toggle-btn-step"
+                class="min-h-[34px] px-2.5 py-1 text-xs font-medium rounded-lg border transition flex items-center gap-1.5 shrink-0 bg-amber-500/20 text-amber-300 border-amber-500/40">
+                <i data-lucide="git-commit" class="w-3.5 h-3.5"></i> จำลอง 4 ขั้นตอน
+            </button>
+            <button onclick="togglePanel('matrix')" id="toggle-btn-matrix"
+                class="min-h-[34px] px-2.5 py-1 text-xs font-medium rounded-lg border transition flex items-center gap-1.5 shrink-0 bg-slate-800/80 text-slate-300 border-slate-700">
+                <i data-lucide="calculator" class="w-3.5 h-3.5"></i> เมทริกซ์ (^R T_H)
+            </button>
+            <button onclick="togglePanel('display')" id="toggle-btn-display"
+                class="min-h-[34px] px-2.5 py-1 text-xs font-medium rounded-lg border transition flex items-center gap-1.5 shrink-0 bg-slate-800/80 text-slate-300 border-slate-700">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i> มุมมอง 3D
+            </button>
+            <button onclick="openTheoryModal()"
+                class="min-h-[34px] px-2.5 py-1 text-xs font-medium rounded-lg border border-indigo-500/40 bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 transition flex items-center gap-1.5 shrink-0">
+                <i data-lucide="book-open" class="w-3.5 h-3.5"></i> คู่มือ D-H
+            </button>
+        </div>
+    </header>
+
+    <!-- Floating Restore Bar (Visible ONLY when Zen Mode is Active) -->
+    <div id="zen-restore-bar" class="hidden fixed top-3 right-3 z-40 flex items-center gap-2">
+        <button onclick="toggleZenMode()"
+            class="touch-btn px-3.5 py-2 rounded-xl bg-slate-900/90 backdrop-blur-md text-sky-300 border border-sky-500/50 shadow-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-800">
+            <i data-lucide="minimize-2" class="w-4 h-4"></i> แสดงแถบเครื่องมือ
+        </button>
+    </div>
+
+    <!-- Compact Top-Left End-Effector HUD (Always accessible, click to open Matrix Panel) -->
+    <div id="hud-widget" onclick="togglePanel('matrix', true)" title="แตะเพื่อดูเมทริกซ์ฉบับเต็ม"
+        class="fixed top-[102px] sm:top-[96px] left-2.5 sm:left-3 z-20 bg-slate-900/85 backdrop-blur-md border border-slate-800 hover:border-sky-500/40 rounded-xl px-2.5 py-2 shadow-xl text-[11px] cursor-pointer transition">
+        <div class="flex items-center justify-between gap-3 mb-1">
+            <span class="font-bold text-slate-300 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                ปลายมือจับ (<sup>R</sup>T<sub>H</sub>)
+            </span>
+            <span class="text-[10px] text-sky-400 font-mono">X/Y/Z</span>
+        </div>
+        <div class="flex items-center gap-2 font-mono text-xs">
+            <span class="text-rose-400 font-semibold">X:<span id="hud-px" class="text-white ml-0.5">0.00</span></span>
+            <span class="text-emerald-400 font-semibold">Y:<span id="hud-py" class="text-white ml-0.5">0.00</span></span>
+            <span class="text-sky-400 font-semibold">Z:<span id="hud-pz" class="text-white ml-0.5">0.00</span></span>
+        </div>
+        <div class="hidden sm:flex items-center gap-2 font-mono text-[10px] text-slate-400 mt-1 pt-1 border-t border-slate-800/80">
+            <span>R:<span id="hud-roll" class="text-slate-200 ml-0.5">0°</span></span>
+            <span>P:<span id="hud-pitch" class="text-slate-200 ml-0.5">0°</span></span>
+            <span>Y:<span id="hud-yaw" class="text-slate-200 ml-0.5">0°</span></span>
+        </div>
+    </div>
+
+    <!-- WINDOW 4: 3D Display & Camera Settings Floating Window -->
+    <section id="panel-display" class="floating-panel hidden fixed top-[168px] sm:top-[164px] left-2.5 sm:left-3 z-20 w-[270px] bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-3 py-2 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <i data-lucide="eye" class="w-3.5 h-3.5 text-sky-400"></i> ตั้งค่าการแสดงผล 3D
+            </span>
+            <div class="flex items-center gap-1">
+                <button onclick="collapsePanel('display')" class="w-7 h-7 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center" title="พับเก็บ">
+                    <i data-lucide="minus" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="togglePanel('display', false)" class="w-7 h-7 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 flex items-center justify-center" title="ปิดหน้าต่าง">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+        <div id="body-display" class="p-3 space-y-2.5 text-xs">
+            <label class="flex items-center justify-between cursor-pointer text-slate-300 py-0.5">
+                <span>แสดงเฟรมอ้างอิง (Frames X/Y/Z)</span>
+                <input type="checkbox" id="toggle-frames" checked onchange="update3DScene()" class="w-4 h-4 rounded bg-slate-800 border-slate-600 text-sky-500">
+            </label>
+            <label class="flex items-center justify-between cursor-pointer text-slate-300 py-0.5">
+                <span>แสดงป้ายชื่อแกน (x_i, z_i)</span>
+                <input type="checkbox" id="toggle-labels" checked onchange="updateLabelsVisibility()" class="w-4 h-4 rounded bg-slate-800 border-slate-600 text-sky-500">
+            </label>
+            <label class="flex items-center justify-between cursor-pointer text-slate-300 py-0.5">
+                <span>แสดงเส้นประแนวแกน Z</span>
+                <input type="checkbox" id="toggle-zlines" checked onchange="update3DScene()" class="w-4 h-4 rounded bg-slate-800 border-slate-600 text-sky-500">
+            </label>
+            <label class="flex items-center justify-between cursor-pointer text-slate-300 py-0.5">
+                <span>เส้นทางเคลื่อนที่ปลายมือจับ</span>
+                <input type="checkbox" id="toggle-trail" checked onchange="update3DScene()" class="w-4 h-4 rounded bg-slate-800 border-slate-600 text-sky-500">
+            </label>
+            <div class="pt-1 border-t border-slate-800">
+                <div class="flex justify-between text-[11px] text-slate-400">
+                    <span>ขนาดลูกศรแกนอ้างอิง</span>
+                    <span id="axis-scale-val" class="font-mono text-sky-400">1.1x</span>
+                </div>
+                <input type="range" id="axis-scale-slider" min="0.4" max="2.5" step="0.1" value="1.1" oninput="document.getElementById('axis-scale-val').textContent=this.value+'x'; update3DScene()" class="w-full">
+            </div>
+            <div class="flex items-center justify-between pt-1 border-t border-slate-800 text-[10px] font-mono">
+                <span class="text-rose-400 font-bold">■ X (Normal)</span>
+                <span class="text-emerald-400 font-bold">■ Y (Z×X)</span>
+                <span class="text-sky-400 font-bold">■ Z (Joint)</span>
+            </div>
+            <button onclick="resetCamera()" class="touch-btn w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 font-medium flex items-center justify-center gap-1.5">
+                <i data-lucide="compass" class="w-3.5 h-3.5"></i> รีเซ็ตมุมมองกล้อง 3D
+            </button>
+        </div>
+    </section>
+
+    <!-- WINDOW 3: Forward Kinematics Matrices (^R T_H & A_i) Floating Window -->
+    <section id="panel-matrix" class="floating-panel hidden fixed top-[102px] sm:top-[96px] left-2.5 right-2.5 sm:left-3 sm:right-auto sm:w-[410px] max-h-[65dvh] z-20 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div class="px-3 py-2 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between shrink-0">
+            <span class="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                <i data-lucide="calculator" class="w-3.5 h-3.5"></i> สมการและเมทริกซ์ (<sup>R</sup>T<sub>H</sub> = A<sub>1</sub>...A<sub>n</sub>)
+            </span>
+            <div class="flex items-center gap-1">
+                <button onclick="collapsePanel('matrix')" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center" title="พับเก็บ">
+                    <i data-lucide="minus" class="w-4 h-4"></i>
+                </button>
+                <button onclick="togglePanel('matrix', false)" class="w-8 h-8 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 flex items-center justify-center" title="ปิดหน้าต่าง">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+        <div id="body-matrix" class="p-3 overflow-y-auto space-y-3 text-xs">
+            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                <div class="text-[11px] font-semibold text-slate-400">สูตรมาตรฐาน (Standard D-H):</div>
+                <div class="text-[11px] font-mono text-sky-300 overflow-x-auto whitespace-nowrap">
+                    <sup>n-1</sup>T<sub>n</sub> = Rot(z,θ<sub>n</sub>)·Trans(0,0,d<sub>n</sub>)·Trans(a<sub>n</sub>,0,0)·Rot(x,α<sub>n</sub>)
+                </div>
+            </div>
+
+            <!-- Total Matrix ^R T_H -->
+            <div class="bg-slate-950/90 border border-sky-500/30 rounded-xl p-2.5 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="font-bold text-white">เมทริกซ์รวม <sup>R</sup>T<sub>H</sub></span>
+                    <button onclick="copyTotalMatrix()" class="px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">คัดลอก</button>
+                </div>
+                <div id="full-total-matrix" class="overflow-x-auto"></div>
+            </div>
+
+            <!-- Individual Matrices A_i -->
+            <div class="space-y-2">
+                <div class="text-[11px] font-bold text-slate-400">เมทริกซ์ย่อยแต่ละข้อต่อ (A<sub>i</sub>):</div>
+                <div id="individual-matrices-container" class="space-y-2.5"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- WINDOW 2: 4-Step D-H Transformation Visualizer (Bottom-Left Floating Card) -->
+    <section id="panel-step" class="floating-panel fixed bottom-[48dvh] lg:bottom-3 left-2.5 right-2.5 lg:right-auto lg:w-[500px] z-20 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-3 py-1.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="text-xs font-bold text-amber-300 flex items-center gap-1.5 shrink-0">
+                    <i data-lucide="git-commit" class="w-3.5 h-3.5"></i> จำลอง 4 ขั้นตอนย้ายเฟรม
+                </span>
+                <select id="step-joint-select" onchange="updateStepVisualizer()" aria-label="เลือกข้อต่อจำลอง"
+                    class="bg-slate-800 border border-slate-700 text-white text-[11px] rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400 truncate">
+                </select>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <button onclick="collapsePanel('step')" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center" title="พับเก็บ">
+                    <i data-lucide="minus" class="w-4 h-4"></i>
+                </button>
+                <button onclick="togglePanel('step', false)" class="w-8 h-8 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 flex items-center justify-center" title="ปิดหน้าต่าง">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+        <div id="body-step" class="p-2.5 space-y-2">
+            <div class="flex items-center gap-1 overflow-x-auto pb-0.5">
+                <button onclick="setStepStage(0)" id="step-btn-0" class="step-btn min-h-[34px] px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0">ปิด</button>
+                <button onclick="setStepStage(1)" id="step-btn-1" class="step-btn min-h-[34px] px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0">1. หมุน θ</button>
+                <button onclick="setStepStage(2)" id="step-btn-2" class="step-btn min-h-[34px] px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0">2. เลื่อน d</button>
+                <button onclick="setStepStage(3)" id="step-btn-3" class="step-btn min-h-[34px] px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0">3. เลื่อน a</button>
+                <button onclick="setStepStage(4)" id="step-btn-4" class="step-btn min-h-[34px] px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0">4. หมุน α</button>
+                <button onclick="playStepAnimation()" class="ml-auto min-h-[34px] px-3 py-1 text-[11px] font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-1 shrink-0">
+                    <i data-lucide="play" class="w-3.5 h-3.5"></i> เล่น
+                </button>
+            </div>
+            <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                <input type="range" id="step-progress-slider" min="0" max="4" step="0.02" value="0" oninput="onStepSliderChange()" class="w-full sm:flex-1">
+                <span id="step-description" class="text-[11px] text-amber-200 font-medium truncate">
+                    เลือกขั้นตอน 1-4 เพื่อดูเฟรมจำลองเคลื่อนที่
+                </span>
+            </div>
+        </div>
+    </section>
+
+    <!-- WINDOW 1: D-H Parameter Table & Real-time Sliders (Mobile Bottom Sheet / Desktop Right Drawer) -->
+    <aside id="panel-dh" class="floating-panel fixed bottom-0 left-0 right-0 lg:top-[96px] lg:bottom-3 lg:left-auto lg:right-3 lg:w-[440px] xl:w-[470px] max-h-[46dvh] lg:max-h-none z-20 bg-slate-900/95 backdrop-blur-md border-t lg:border border-slate-700/80 rounded-t-2xl lg:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <!-- Drawer Header -->
+        <div class="px-3 py-2 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                    <i data-lucide="sliders" class="w-4 h-4 text-sky-400"></i> ตาราง D-H & ปรับค่าแกน
+                </span>
+                <!-- DOF Stepper -->
+                <div class="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-0.5">
+                    <button onclick="changeDOF(-1)" class="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center" title="ลดจำนวนแกน">-</button>
+                    <span class="font-mono text-xs font-bold text-sky-400 px-1.5"><span id="dof-count">3</span> แกน</span>
+                    <button onclick="changeDOF(1)" class="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center" title="เพิ่มจำนวนแกน">+</button>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1">
+                <button onclick="collapsePanel('dh')" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center" title="พับเก็บหน้าต่าง">
+                    <i data-lucide="minus" class="w-4 h-4"></i>
+                </button>
+                <button onclick="togglePanel('dh', false)" class="w-8 h-8 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 flex items-center justify-center" title="ปิดหน้าต่าง">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Drawer Body -->
+        <div id="body-dh" class="flex-1 overflow-y-auto p-3 space-y-3">
+            <!-- Sub-navigation inside D-H Panel (Compact for mobile) -->
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+                    <button onclick="switchDHSubView('sliders')" id="subbtn-sliders" class="min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg bg-sky-600 text-white transition">
+                        แถบเลื่อน (Sliders)
+                    </button>
+                    <button onclick="switchDHSubView('table')" id="subbtn-table" class="min-h-[34px] px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+                        ตาราง D-H Table
+                    </button>
+                    <button onclick="switchDHSubView('both')" id="subbtn-both" class="hidden sm:inline-block min-h-[34px] px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+                        แสดงทั้งหมด
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-1">
+                    <button onclick="resetJointAngles()" class="min-h-[36px] px-2.5 py-1 text-[11px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1" title="รีเซ็ตมุม θ">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> รีเซ็ต
+                    </button>
+                    <button onclick="exportDHData('csv')" class="min-h-[36px] px-2.5 py-1 text-[11px] rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 flex items-center gap-1" title="ดาวน์โหลด CSV">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- D-H Parameter Table Section -->
+            <div id="dh-table-section" class="hidden sm:block bg-slate-950/70 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/95 text-[11px] font-mono text-slate-400 border-b border-slate-800">
+                                <th class="py-2 px-2 text-center">Joint</th>
+                                <th class="py-2 px-1.5 text-center text-sky-400">θ<sub>i</sub> (°)</th>
+                                <th class="py-2 px-1.5 text-center text-indigo-400">d<sub>i</sub> (Z)</th>
+                                <th class="py-2 px-1.5 text-center text-emerald-400">a<sub>i</sub> (X)</th>
+                                <th class="py-2 px-1.5 text-center text-amber-400">α<sub>i</sub> (°)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dh-table-body" class="divide-y divide-slate-800/70 text-xs font-mono">
+                            <!-- Rows generated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Interactive Sliders Section -->
+            <div id="dh-sliders-section" class="space-y-2.5">
+                <div id="joint-sliders-container" class="space-y-2.5">
+                    <!-- Sliders generated via JS -->
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur-md text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-2xl border border-slate-700 transform -translate-y-24 opacity-0 transition-all duration-300 z-50 flex items-center gap-2 pointer-events-none">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+        <span id="toast-message">ดำเนินการสำเร็จ</span>
+    </div>
+
+    <!-- Theory Modal (Saeed B. Niku Chapter 2.12 Summary) -->
+    <div id="theory-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-3 sm:p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[88dvh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                <h3 class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="book-open" class="w-4 h-4 text-sky-400"></i>
+                    หลักการกำหนดแกน Denavit-Hartenberg (บทที่ 2.12)
+                </h3>
+                <button onclick="closeTheoryModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto space-y-3 text-xs text-slate-300 leading-relaxed">
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <h4 class="font-bold text-sky-400">1. การกำหนดแกนอ้างอิงประจำข้อต่อ (Coordinate Frames)</h4>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><strong class="text-sky-300">แกน Z<sub>n-1</sub>:</strong> กำหนดให้อยู่ตามแนวแกนการเคลื่อนที่ (แกนหมุนหรือแกนเลื่อน) ของข้อต่อที่ n</li>
+                        <li><strong class="text-rose-300">แกน X<sub>n</sub>:</strong> กำหนดตามแนว <em>เส้นตั้งฉากปกติ (Common Normal)</em> ซึ่งเป็นเส้นที่สั้นที่สุดและตั้งฉากกับทั้งแกน Z<sub>n-1</sub> และ Z<sub>n</sub> (หากแกน Z ตัดกัน ให้ใช้ทิศทาง Cross-product Z<sub>n-1</sub> × Z<sub>n</sub>)</li>
+                        <li><strong class="text-emerald-300">แกน Y<sub>n</sub>:</strong> กำหนดตามกฎมือขวา (Right-Hand Rule)</li>
+                    </ul>
+                </div>
+
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <h4 class="font-bold text-amber-400">2. ความหมายของตัวแปร 4 ตัวในตาราง D-H</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <div class="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                            <span class="font-mono font-bold text-sky-400">θ<sub>n</sub> (Joint Angle)</span>
+                            <p class="text-slate-400 mt-0.5">มุมที่หมุนรอบแกน Z<sub>n-1</sub> เพื่อทำให้ X<sub>n-1</sub> ขนานกับ X<sub>n</sub></p>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                            <span class="font-mono font-bold text-indigo-400">d<sub>n</sub> (Joint Offset)</span>
+                            <p class="text-slate-400 mt-0.5">ระยะทางที่เลื่อนตามแกน Z<sub>n-1</sub> ระหว่าง X<sub>n-1</sub> และ X<sub>n</sub></p>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                            <span class="font-mono font-bold text-emerald-400">a<sub>n</sub> (Link Length)</span>
+                            <p class="text-slate-400 mt-0.5">ความยาวก้านต่อตามแนวเส้นตั้งฉากปกติ X<sub>n</sub></p>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                            <span class="font-mono font-bold text-amber-400">α<sub>n</sub> (Twist Angle)</span>
+                            <p class="text-slate-400 mt-0.5">มุมที่หมุนรอบแกน X<sub>n</sub> เพื่อทำให้ Z<sub>n-1</sub> ขนานกับ Z<sub>n</sub></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-1">
+                    <h4 class="font-bold text-emerald-400">3. ลำดับการเคลื่อนที่ 4 ขั้นตอน (<sup>n-1</sup>T<sub>n</sub> = A<sub>n</sub>)</h4>
+                    <ol class="list-decimal pl-5 space-y-1 text-slate-300">
+                        <li>หมุนรอบแกน <strong>Z<sub>n-1</sub></strong> ด้วยมุม <strong>θ<sub>n</sub></strong></li>
+                        <li>เลื่อนตามแนวแกน <strong>Z<sub>n-1</sub></strong> ด้วยระยะ <strong>d<sub>n</sub></strong></li>
+                        <li>เลื่อนตามแนวแกน <strong>X<sub>n-1</sub></strong> ด้วยระยะ <strong>a<sub>n</sub></strong></li>
+                        <li>หมุนรอบแกน <strong>X<sub>n</sub></strong> ด้วยมุม <strong>α<sub>n</sub></strong></li>
+                    </ol>
+                </div>
+            </div>
+            <div class="px-4 py-2.5 border-t border-slate-800 bg-slate-950 flex justify-end">
+                <button onclick="closeTheoryModal()" class="touch-btn px-4 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold">เข้าใจแล้ว</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // ==========================================
+        // 1. STATE & PRESET CONFIGURATIONS
+        // ==========================================
+        let dhParams = [];
+        let defaultThetas = [];
+        let isZenMode = false;
+
+        // Window Visibility & Collapse State
+        const panelState = {
+            dh: { open: true, collapsed: false },
+            step: { open: true, collapsed: false },
+            matrix: { open: false, collapsed: false },
+            display: { open: false, collapsed: false }
+        };
+
+        const PRESETS = {
+            '2dof': [
+                { theta: 30, d: 0, a: 2.5, alpha: 0 },
+                { theta: 45, d: 0, a: 2.0, alpha: 0 }
+            ],
+            '3dof_ex225': [
+                { theta: 25, d: 0, a: 2.5, alpha: 0 },
+                { theta: -35, d: 0, a: 0, alpha: -90 },
+                { theta: 0, d: 2.2, a: 0, alpha: 0 }
+            ],
+            '3dof_proj1': [
+                { theta: 20, d: 2.0, a: 0, alpha: 90 },
+                { theta: 40, d: 0.5, a: 2.2, alpha: 0 },
+                { theta: -50, d: 0, a: 1.8, alpha: 0 }
+            ],
+            '6dof': [
+                { theta: 15, d: 1.8, a: 0, alpha: 90 },
+                { theta: 35, d: 0, a: 2.2, alpha: 0 },
+                { theta: -45, d: 0, a: 1.8, alpha: 0 },
+                { theta: 0, d: 0, a: 0.6, alpha: 90 },
+                { theta: 25, d: 0, a: 0, alpha: -90 },
+                { theta: 0, d: 0.7, a: 0, alpha: 0 }
+            ]
+        };
+
+        let trailPoints = [];
+        const MAX_TRAIL_POINTS = 120;
+        let stepAnimationId = null;
+
+        // ==========================================
+        // 2. WINDOW MANAGEMENT (OPEN / CLOSE / COLLAPSE / ZEN)
+        // ==========================================
+        function togglePanel(name, forceState = null) {
+            const state = panelState[name];
+            if (!state) return;
+
+            state.open = forceState !== null ? forceState : !state.open;
+            if (state.open) {
+                state.collapsed = false;
+            }
+
+            const panelEl = document.getElementById(`panel-${name}`);
+            const bodyEl = document.getElementById(`body-${name}`);
+            const btnEl = document.getElementById(`toggle-btn-${name}`);
+
+            if (state.open) {
+                panelEl.classList.remove('hidden');
+                if (bodyEl) bodyEl.classList.remove('panel-collapsed-body');
+                if (btnEl) {
+                    btnEl.classList.remove('bg-slate-800/80', 'text-slate-300', 'border-slate-700');
+                    if (name === 'step') {
+                        btnEl.classList.add('bg-amber-500/20', 'text-amber-300', 'border-amber-500/40');
+                    } else {
+                        btnEl.classList.add('bg-sky-500/20', 'text-sky-300', 'border-sky-500/40');
+                    }
+                }
+            } else {
+                panelEl.classList.add('hidden');
+                if (btnEl) {
+                    btnEl.classList.remove('bg-sky-500/20', 'text-sky-300', 'border-sky-500/40', 'bg-amber-500/20', 'text-amber-300', 'border-amber-500/40');
+                    btnEl.classList.add('bg-slate-800/80', 'text-slate-300', 'border-slate-700');
+                }
+            }
+            adjustMobileStepPosition();
+        }
+
+        function collapsePanel(name) {
+            const state = panelState[name];
+            if (!state) return;
+            state.collapsed = !state.collapsed;
+            const bodyEl = document.getElementById(`body-${name}`);
+            if (bodyEl) {
+                bodyEl.classList.toggle('panel-collapsed-body', state.collapsed);
+            }
+            adjustMobileStepPosition();
+        }
+
+        // Prevent Step panel from overlapping collapsed/closed D-H bottom sheet on mobile
+        function adjustMobileStepPosition() {
+            const stepPanel = document.getElementById('panel-step');
+            if (!stepPanel) return;
+            if (window.innerWidth < 1024) {
+                if (!panelState.dh.open) {
+                    stepPanel.style.bottom = '12px';
+                } else if (panelState.dh.collapsed) {
+                    stepPanel.style.bottom = '62px';
+                } else {
+                    stepPanel.style.bottom = '47.5dvh';
+                }
+            } else {
+                stepPanel.style.bottom = '12px';
+            }
+        }
+
+        function toggleZenMode() {
+            isZenMode = !isZenMode;
+            const header = document.getElementById('main-header');
+            const zenBar = document.getElementById('zen-restore-bar');
+            const hud = document.getElementById('hud-widget');
+
+            if (isZenMode) {
+                header.classList.add('-translate-y-full', 'opacity-0', 'pointer-events-none');
+                zenBar.classList.remove('hidden');
+                hud.style.top = '12px';
+                ['dh', 'step', 'matrix', 'display'].forEach(name => {
+                    document.getElementById(`panel-${name}`).classList.add('hidden');
+                });
+            } else {
+                header.classList.remove('-translate-y-full', 'opacity-0', 'pointer-events-none');
+                zenBar.classList.add('hidden');
+                hud.style.top = '';
+                ['dh', 'step', 'matrix', 'display'].forEach(name => {
+                    if (panelState[name].open) {
+                        document.getElementById(`panel-${name}`).classList.remove('hidden');
+                    }
+                });
+                adjustMobileStepPosition();
+            }
+        }
+
+        function switchDHSubView(mode) {
+            const slidersSec = document.getElementById('dh-sliders-section');
+            const tableSec = document.getElementById('dh-table-section');
+            const btnSliders = document.getElementById('subbtn-sliders');
+            const btnTable = document.getElementById('subbtn-table');
+            const btnBoth = document.getElementById('subbtn-both');
+
+            [btnSliders, btnTable, btnBoth].forEach(b => {
+                if (!b) return;
+                b.className = 'min-h-[34px] px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition';
+            });
+            if (btnBoth) btnBoth.classList.add('hidden', 'sm:inline-block');
+
+            if (mode === 'sliders') {
+                slidersSec.classList.remove('hidden');
+                tableSec.classList.add('hidden');
+                btnSliders.className = 'min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg bg-sky-600 text-white transition';
+            } else if (mode === 'table') {
+                slidersSec.classList.add('hidden');
+                tableSec.classList.remove('hidden');
+                btnTable.className = 'min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg bg-sky-600 text-white transition';
+            } else {
+                slidersSec.classList.remove('hidden');
+                tableSec.classList.remove('hidden');
+                if (btnBoth) btnBoth.className = 'hidden sm:inline-block min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg bg-sky-600 text-white transition';
+            }
+        }
+
+        // ==========================================
+        // 3. THREE.JS 3D SCENE SETUP (TOUCH + MOUSE)
+        // ==========================================
+        const container = document.getElementById('canvas-container');
+        const labelsContainer = document.getElementById('labels-container');
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x090d16);
+        scene.fog = new THREE.FogExp2(0x090d16, 0.032);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(6.8, 5.8, 8.2);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.domElement.style.touchAction = 'none'; // Enable smooth OrbitControls touch gestures
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.07;
+        controls.enablePan = true;
+        controls.enableZoom = true;
+        controls.touches = {
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_PAN
+        };
+        controls.target.set(0, 1.2, 0);
+        controls.update();
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.58);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.95);
+        dirLight.position.set(8, 14, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        scene.add(dirLight);
+
+        const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
+        rimLight.position.set(-8, 4, -8);
+        scene.add(rimLight);
+
+        // Floor Grid
+        const gridHelper = new THREE.GridHelper(16, 16, 0x334155, 0x1e293b);
+        scene.add(gridHelper);
+
+        const groundGeo = new THREE.PlaneGeometry(24, 24);
+        const groundMat = new THREE.ShadowMaterial({ opacity: 0.25 });
+        const groundPlane = new THREE.Mesh(groundGeo, groundMat);
+        groundPlane.rotation.x = -Math.PI / 2;
+        groundPlane.receiveShadow = true;
+        scene.add(groundPlane);
+
+        // Root Group converted from Robotics Z-up to Three.js Y-up
+        const robotWorldGroup = new THREE.Group();
+        robotWorldGroup.rotation.x = -Math.PI / 2;
+        scene.add(robotWorldGroup);
+
+        const robotMeshGroup = new THREE.Group();
+        const framesGroup = new THREE.Group();
+        const zLinesGroup = new THREE.Group();
+        const ghostFrameGroup = new THREE.Group();
+        const trailGroup = new THREE.Group();
+
+        robotWorldGroup.add(robotMeshGroup);
+        robotWorldGroup.add(framesGroup);
+        robotWorldGroup.add(zLinesGroup);
+        robotWorldGroup.add(ghostFrameGroup);
+        robotWorldGroup.add(trailGroup);
+
+        let projectedLabels = [];
+
+        // ==========================================
+        // 4. MATRIX MATH & STANDARD D-H KINEMATICS
+        // ==========================================
+        function degToRad(deg) {
+            return (deg * Math.PI) / 180;
+        }
+
+        function radToDeg(rad) {
+            return (rad * 180) / Math.PI;
+        }
+
+        function computeDHMatrix(thetaDeg, d, a, alphaDeg) {
+            const th = degToRad(thetaDeg);
+            const al = degToRad(alphaDeg);
+            const cTh = Math.cos(th);
+            const sTh = Math.sin(th);
+            const cAl = Math.cos(al);
+            const sAl = Math.sin(al);
+
+            return [
+                [cTh, -sTh * cAl,  sTh * sAl, a * cTh],
+                [sTh,  cTh * cAl, -cTh * sAl, a * sTh],
+                [0,    sAl,        cAl,       d      ],
+                [0,    0,          0,         1      ]
+            ];
+        }
+
+        function multiplyMatrices4x4(A, B) {
+            const result = [
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0]
+            ];
+            for (let i = 0; i < 4; i++) {
+                for (let j = 0; j < 4; j++) {
+                    let sum = 0;
+                    for (let k = 0; k < 4; k++) {
+                        sum += A[i][k] * B[k][j];
+                    }
+                    result[i][j] = Math.abs(sum) < 1e-10 ? 0 : sum;
+                }
+            }
+            return result;
+        }
+
+        function identityMatrix4x4() {
+            return [
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, 1, 0],
+                [0, 0, 0, 1]
+            ];
+        }
+
+        function arrayToThreeMatrix4(m) {
+            const mat4 = new THREE.Matrix4();
+            mat4.set(
+                m[0][0], m[0][1], m[0][2], m[0][3],
+                m[1][0], m[1][1], m[1][2], m[1][3],
+                m[2][0], m[2][1], m[2][2], m[2][3],
+                m[3][0], m[3][1], m[3][2], m[3][3]
+            );
+            return mat4;
+        }
+
+        function extractRPY(T) {
+            const r11 = T[0][0], r21 = T[1][0], r31 = T[2][0];
+            const r32 = T[2][1], r33 = T[2][2];
+            const r12 = T[0][1], r22 = T[1][1];
+
+            let pitch = Math.atan2(-r31, Math.sqrt(r11 * r11 + r21 * r21));
+            let yaw, roll;
+
+            if (Math.abs(Math.cos(pitch)) > 1e-6) {
+                yaw = Math.atan2(r21, r11);
+                roll = Math.atan2(r32, r33);
+            } else {
+                yaw = 0;
+                roll = Math.atan2(-r12, r22);
+            }
+            return {
+                roll: radToDeg(roll),
+                pitch: radToDeg(pitch),
+                yaw: radToDeg(yaw)
+            };
+        }
+
+        // ==========================================
+        // 5. 3D GEOMETRY BUILDERS
+        // ==========================================
+        function clearGroup(group) {
+            while (group.children.length > 0) {
+                const obj = group.children[0];
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                    else obj.material.dispose();
+                }
+                group.remove(obj);
+            }
+        }
+
+        function createCoordinateFrame(scale = 1.0, opacity = 1.0, isGhost = false) {
+            const frame = new THREE.Group();
+            const len = 0.85 * scale;
+            const headLen = 0.2 * scale;
+            const headWidth = 0.1 * scale;
+
+            const colors = {
+                x: isGhost ? 0xfb7185 : 0xef4444,
+                y: isGhost ? 0x34d399 : 0x10b981,
+                z: isGhost ? 0x38bdf8 : 0x3b82f6
+            };
+
+            const arrowX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), len, colors.x, headLen, headWidth);
+            const arrowY = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), len, colors.y, headLen, headWidth);
+            const arrowZ = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), len, colors.z, headLen, headWidth);
+
+            if (opacity < 1.0) {
+                [arrowX, arrowY, arrowZ].forEach(arrow => {
+                    arrow.line.material.transparent = true;
+                    arrow.line.material.opacity = opacity;
+                    arrow.cone.material.transparent = true;
+                    arrow.cone.material.opacity = opacity;
+                });
+            }
+
+            const sphereGeo = new THREE.SphereGeometry(0.065 * scale, 16, 16);
+            const sphereMat = new THREE.MeshStandardMaterial({
+                color: isGhost ? 0xfbbf24 : 0xffffff,
+                emissive: isGhost ? 0xd97706 : 0x334155,
+                transparent: opacity < 1.0,
+                opacity: opacity
+            });
+            const originSphere = new THREE.Mesh(sphereGeo, sphereMat);
+
+            frame.add(arrowX, arrowY, arrowZ, originSphere);
+            return frame;
+        }
+
+        function createSegmentCylinder(p1, p2, radius, material) {
+            const direction = new THREE.Vector3().subVectors(p2, p1);
+            const length = direction.length();
+            if (length < 0.001) return null;
+
+            const geometry = new THREE.CylinderGeometry(radius, radius, length, 20);
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+            mesh.position.copy(midpoint);
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+            return mesh;
+        }
+
+        function createEndEffectorMesh(scale = 1.0) {
+            const gripper = new THREE.Group();
+            const matBody = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.6, roughness: 0.3 });
+            const matFinger = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.7, roughness: 0.2 });
+
+            const wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * scale, 0.18 * scale, 0.22 * scale, 20), matBody);
+            wrist.rotation.x = Math.PI / 2;
+            wrist.position.z = 0.11 * scale;
+            gripper.add(wrist);
+
+            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.46 * scale, 0.12 * scale, 0.1 * scale), matBody);
+            palm.position.z = 0.25 * scale;
+            gripper.add(palm);
+
+            const fingerGeo = new THREE.BoxGeometry(0.07 * scale, 0.1 * scale, 0.28 * scale);
+            const leftFinger = new THREE.Mesh(fingerGeo, matFinger);
+            leftFinger.position.set(-0.19 * scale, 0, 0.42 * scale);
+
+            const rightFinger = new THREE.Mesh(fingerGeo, matFinger);
+            rightFinger.position.set(0.19 * scale, 0, 0.42 * scale);
+
+            gripper.add(leftFinger, rightFinger);
+            return gripper;
+        }
+
+        // ==========================================
+        // 6. UPDATE 3D SCENE & KINEMATICS
+        // ==========================================
+        function update3DScene() {
+            clearGroup(robotMeshGroup);
+            clearGroup(framesGroup);
+            clearGroup(zLinesGroup);
+            clearGroup(trailGroup);
+            projectedLabels = [];
+
+            const showFrames = document.getElementById('toggle-frames').checked;
+            const showZLines = document.getElementById('toggle-zlines').checked;
+            const showTrail = document.getElementById('toggle-trail').checked;
+            const axisScale = parseFloat(document.getElementById('axis-scale-slider').value);
+
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.4 });
+            const jointMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.5, roughness: 0.25 });
+            const linkAMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.65, roughness: 0.3 });
+            const linkDMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.5, roughness: 0.35 });
+
+            // Base Pedestal
+            const basePlate = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.75, 0.16, 32), baseMat);
+            basePlate.rotation.x = Math.PI / 2;
+            basePlate.position.z = -0.08;
+            basePlate.receiveShadow = true;
+            robotMeshGroup.add(basePlate);
+
+            let currentT = identityMatrix4x4();
+            const frameTransforms = [currentT];
+            const individualMatrices = [];
+
+            for (let i = 0; i < dhParams.length; i++) {
+                const p = dhParams[i];
+                const Ai = computeDHMatrix(p.theta, p.d, p.a, p.alpha);
+                individualMatrices.push(Ai);
+                currentT = multiplyMatrices4x4(currentT, Ai);
+                frameTransforms.push(currentT);
+            }
+
+            // Render Frames, Dashed Z-Axis Guidelines & Labels
+            for (let i = 0; i <= dhParams.length; i++) {
+                const T = frameTransforms[i];
+                const mat4 = arrayToThreeMatrix4(T);
+
+                if (showFrames) {
+                    const frameObj = createCoordinateFrame(axisScale);
+                    frameObj.applyMatrix4(mat4);
+                    framesGroup.add(frameObj);
+                }
+
+                if (showZLines) {
+                    const zStart = new THREE.Vector3(0, 0, -1.6).applyMatrix4(mat4);
+                    const zEnd = new THREE.Vector3(0, 0, 2.2).applyMatrix4(mat4);
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints([zStart, zEnd]);
+                    const lineMat = new THREE.LineDashedMaterial({
+                        color: 0x38bdf8,
+                        dashSize: 0.12,
+                        gapSize: 0.08,
+                        transparent: true,
+                        opacity: 0.35
+                    });
+                    const zLine = new THREE.Line(lineGeo, lineMat);
+                    zLine.computeLineDistances();
+                    zLinesGroup.add(zLine);
+                }
+
+                const xTip = new THREE.Vector3(0.95 * axisScale, 0, 0).applyMatrix4(mat4);
+                const zTip = new THREE.Vector3(0, 0, 0.95 * axisScale).applyMatrix4(mat4);
+
+                const suffix = (i === dhParams.length) ? `${i}(H)` : `${i}`;
+                projectedLabels.push({ text: `x${suffix}`, pos: xTip, color: '#fca5a5', bg: 'rgba(127, 29, 29, 0.78)' });
+                projectedLabels.push({ text: `z${suffix}`, pos: zTip, color: '#93c5fd', bg: 'rgba(30, 58, 138, 0.78)' });
+            }
+
+            // Render Joints & Links
+            for (let i = 0; i < dhParams.length; i++) {
+                const p = dhParams[i];
+                const matPrev = arrayToThreeMatrix4(frameTransforms[i]);
+                const matCurr = arrayToThreeMatrix4(frameTransforms[i + 1]);
+
+                const jointCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.44, 24), jointMat);
+                jointCyl.rotation.x = Math.PI / 2;
+                const jointHolder = new THREE.Group();
+                jointHolder.add(jointCyl);
+                jointHolder.applyMatrix4(matPrev);
+                robotMeshGroup.add(jointHolder);
+
+                const pStart = new THREE.Vector3(0, 0, 0).applyMatrix4(matPrev);
+                const pMid = new THREE.Vector3(0, 0, p.d).applyMatrix4(matPrev);
+                const pEnd = new THREE.Vector3(0, 0, 0).applyMatrix4(matCurr);
+
+                if (Math.abs(p.d) > 0.01) {
+                    const segD = createSegmentCylinder(pStart, pMid, 0.13, linkDMat);
+                    if (segD) robotMeshGroup.add(segD);
+
+                    if (Math.abs(p.a) > 0.01) {
+                        const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.145, 16, 16), linkDMat);
+                        elbow.position.copy(pMid);
+                        robotMeshGroup.add(elbow);
+                    }
+                }
+
+                if (Math.abs(p.a) > 0.01) {
+                    const segA = createSegmentCylinder(pMid, pEnd, 0.12, linkAMat);
+                    if (segA) robotMeshGroup.add(segA);
+                }
+            }
+
+            // End-Effector Gripper
+            const finalT = frameTransforms[dhParams.length];
+            const gripper = createEndEffectorMesh(0.85);
+            gripper.applyMatrix4(arrayToThreeMatrix4(finalT));
+            robotMeshGroup.add(gripper);
+
+            // End-Effector Trail
+            const eePos = new THREE.Vector3(finalT[0][3], finalT[1][3], finalT[2][3]);
+            if (trailPoints.length === 0 || trailPoints[trailPoints.length - 1].distanceTo(eePos) > 0.02) {
+                trailPoints.push(eePos.clone());
+                if (trailPoints.length > MAX_TRAIL_POINTS) trailPoints.shift();
+            }
+
+            if (showTrail && trailPoints.length > 1) {
+                const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPoints);
+                const trailMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.7 });
+                trailGroup.add(new THREE.Line(trailGeo, trailMat));
+            }
+
+            updateTelemetryHUD(finalT);
+            renderMatricesUI(individualMatrices, finalT);
+            updateStepVisualizer();
+        }
+
+        // ==========================================
+        // 7. 4-STEP D-H TRANSFORMATION VISUALIZER
+        // ==========================================
+        function updateStepVisualizer() {
+            clearGroup(ghostFrameGroup);
+
+            const progress = parseFloat(document.getElementById('step-progress-slider').value);
+            const descEl = document.getElementById('step-description');
+            const jointIdx = parseInt(document.getElementById('step-joint-select').value || '0', 10);
+
+            document.querySelectorAll('.step-btn').forEach((btn, idx) => {
+                if ((progress === 0 && idx === 0) || (progress > idx - 1 && progress <= idx && idx > 0)) {
+                    btn.classList.add('bg-amber-500/25', 'text-amber-300', 'border-amber-500/50', 'font-bold');
+                    btn.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-700');
+                } else {
+                    btn.classList.remove('bg-amber-500/25', 'text-amber-300', 'border-amber-500/50', 'font-bold');
+                    btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
+                }
+            });
+
+            if (progress <= 0 || dhParams.length === 0 || jointIdx >= dhParams.length) {
+                descEl.textContent = 'เลือกขั้นตอน 1-4 เพื่อดูเฟรมจำลองเคลื่อนที่';
+                return;
+            }
+
+            let T_prev = identityMatrix4x4();
+            for (let i = 0; i < jointIdx; i++) {
+                const p = dhParams[i];
+                T_prev = multiplyMatrices4x4(T_prev, computeDHMatrix(p.theta, p.d, p.a, p.alpha));
+            }
+
+            const p = dhParams[jointIdx];
+            const n = jointIdx + 1;
+
+            const s1 = Math.min(Math.max(progress, 0), 1);
+            const s2 = Math.min(Math.max(progress - 1, 0), 1);
+            const s3 = Math.min(Math.max(progress - 2, 0), 1);
+            const s4 = Math.min(Math.max(progress - 3, 0), 1);
+
+            const curTheta = p.theta * s1;
+            const curD = p.d * s2;
+            const curA = p.a * s3;
+            const curAlpha = p.alpha * s4;
+
+            const stepMat = computeDHMatrix(curTheta, curD, curA, curAlpha);
+            const T_ghost = multiplyMatrices4x4(T_prev, stepMat);
+
+            const axisScale = parseFloat(document.getElementById('axis-scale-slider').value) * 1.25;
+            const ghostFrame = createCoordinateFrame(axisScale, 0.95, true);
+            ghostFrame.applyMatrix4(arrayToThreeMatrix4(T_ghost));
+            ghostFrameGroup.add(ghostFrame);
+
+            if (progress <= 1) {
+                descEl.textContent = `1. หมุนรอบ Z_${n-1} มุม θ_${n} = ${curTheta.toFixed(1)}°`;
+            } else if (progress <= 2) {
+                descEl.textContent = `2. เลื่อนตาม Z_${n-1} ระยะ d_${n} = ${curD.toFixed(2)}`;
+            } else if (progress <= 3) {
+                descEl.textContent = `3. เลื่อนตาม X_${n-1} ระยะ a_${n} = ${curA.toFixed(2)}`;
+            } else {
+                descEl.textContent = `4. หมุนรอบ X_${n} มุม α_${n} = ${curAlpha.toFixed(1)}°`;
+            }
+        }
+
+        function setStepStage(stage) {
+            if (stepAnimationId) {
+                cancelAnimationFrame(stepAnimationId);
+                stepAnimationId = null;
+            }
+            document.getElementById('step-progress-slider').value = stage;
+            updateStepVisualizer();
+        }
+
+        function onStepSliderChange() {
+            if (stepAnimationId) {
+                cancelAnimationFrame(stepAnimationId);
+                stepAnimationId = null;
+            }
+            updateStepVisualizer();
+        }
+
+        function playStepAnimation() {
+            if (stepAnimationId) cancelAnimationFrame(stepAnimationId);
+            const slider = document.getElementById('step-progress-slider');
+            slider.value = 0;
+
+            function animateStep() {
+                let val = parseFloat(slider.value) + 0.025;
+                if (val >= 4) {
+                    slider.value = 4;
+                    updateStepVisualizer();
+                    stepAnimationId = null;
+                    return;
+                }
+                slider.value = val;
+                updateStepVisualizer();
+                stepAnimationId = requestAnimationFrame(animateStep);
+            }
+            stepAnimationId = requestAnimationFrame(animateStep);
+        }
+
+        // ==========================================
+        // 8. UI RENDERING (TABLE, SLIDERS, MATRICES)
+        // ==========================================
+        function rebuildControlsUI() {
+            document.getElementById('dof-count').textContent = dhParams.length;
+
+            const stepSelect = document.getElementById('step-joint-select');
+            const prevSelect = stepSelect.value;
+            stepSelect.innerHTML = '';
+            dhParams.forEach((_, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.textContent = `Frame ${idx} → ${idx + 1} (J${idx + 1})`;
+                stepSelect.appendChild(opt);
+            });
+            if (prevSelect && parseInt(prevSelect) < dhParams.length) {
+                stepSelect.value = prevSelect;
+            }
+
+            // Render D-H Parameter Table Rows
+            const tbody = document.getElementById('dh-table-body');
+            tbody.innerHTML = '';
+
+            dhParams.forEach((row, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-800/30 transition';
+                tr.innerHTML = `
+                    <td class="py-1.5 px-2 text-center font-bold text-slate-300">
+                        <span class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">${idx}-${idx + 1}</span>
+                    </td>
+                    <td class="py-1.5 px-1 text-center">
+                        <input type="number" step="1" value="${row.theta}" data-idx="${idx}" data-field="theta"
+                            onchange="onTableInput(this)"
+                            class="touch-input w-14 sm:w-16 bg-slate-900 border border-slate-700 focus:border-sky-500 rounded-lg px-1 text-center text-sky-300 focus:outline-none">
+                    </td>
+                    <td class="py-1.5 px-1 text-center">
+                        <input type="number" step="0.1" value="${row.d}" data-idx="${idx}" data-field="d"
+                            onchange="onTableInput(this)"
+                            class="touch-input w-14 sm:w-16 bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-lg px-1 text-center text-indigo-300 focus:outline-none">
+                    </td>
+                    <td class="py-1.5 px-1 text-center">
+                        <input type="number" step="0.1" value="${row.a}" data-idx="${idx}" data-field="a"
+                            onchange="onTableInput(this)"
+                            class="touch-input w-14 sm:w-16 bg-slate-900 border border-slate-700 focus:border-emerald-500 rounded-lg px-1 text-center text-emerald-300 focus:outline-none">
+                    </td>
+                    <td class="py-1.5 px-1 text-center">
+                        <input type="number" step="5" value="${row.alpha}" data-idx="${idx}" data-field="alpha"
+                            onchange="onTableInput(this)"
+                            class="touch-input w-14 sm:w-16 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-lg px-1 text-center text-amber-300 focus:outline-none">
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Render Touch-Friendly Sliders
+            const slidersContainer = document.getElementById('joint-sliders-container');
+            slidersContainer.innerHTML = '';
+
+            dhParams.forEach((row, idx) => {
+                const card = document.createElement('div');
+                card.className = 'p-2.5 rounded-xl bg-slate-950/75 border border-slate-800/90 space-y-1';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between text-xs pb-0.5">
+                        <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                            <span class="w-5 h-5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/30 flex items-center justify-center text-[11px] font-mono">${idx + 1}</span>
+                            ข้อต่อที่ ${idx + 1} (Joint ${idx + 1})
+                        </span>
+                        <span class="text-[11px] font-mono text-amber-300/90">α<sub>${idx + 1}</sub> = ${row.alpha}°</span>
+                    </div>
+
+                    <!-- Theta Slider -->
+                    <div class="grid grid-cols-12 items-center gap-2 text-xs">
+                        <span class="col-span-3 font-mono text-sky-400 font-semibold">θ<sub>${idx + 1}</sub> มุม:</span>
+                        <input type="range" min="-180" max="180" step="1" value="${row.theta}"
+                            id="slider-theta-${idx}"
+                            oninput="onSliderInput(${idx}, 'theta', this.value)"
+                            class="col-span-6">
+                        <span id="val-theta-${idx}" class="col-span-3 text-right font-mono text-white font-bold">${row.theta}°</span>
+                    </div>
+
+                    <!-- Link Length a_i Slider -->
+                    <div class="grid grid-cols-12 items-center gap-2 text-xs">
+                        <span class="col-span-3 font-mono text-emerald-400 font-semibold">a<sub>${idx + 1}</sub> ยาว:</span>
+                        <input type="range" min="0" max="5" step="0.1" value="${row.a}"
+                            id="slider-a-${idx}"
+                            oninput="onSliderInput(${idx}, 'a', this.value)"
+                            class="col-span-6">
+                        <span id="val-a-${idx}" class="col-span-3 text-right font-mono text-emerald-300 font-bold">${Number(row.a).toFixed(1)}</span>
+                    </div>
+
+                    <!-- Joint Offset d_i Slider -->
+                    <div class="grid grid-cols-12 items-center gap-2 text-xs">
+                        <span class="col-span-3 font-mono text-indigo-400 font-semibold">d<sub>${idx + 1}</sub> เลื่อน:</span>
+                        <input type="range" min="-4" max="4" step="0.1" value="${row.d}"
+                            id="slider-d-${idx}"
+                            oninput="onSliderInput(${idx}, 'd', this.value)"
+                            class="col-span-6">
+                        <span id="val-d-${idx}" class="col-span-3 text-right font-mono text-indigo-300 font-bold">${Number(row.d).toFixed(1)}</span>
+                    </div>
+                `;
+                slidersContainer.appendChild(card);
+            });
+        }
+
+        function onTableInput(inputEl) {
+            const idx = parseInt(inputEl.dataset.idx, 10);
+            const field = inputEl.dataset.field;
+            const val = parseFloat(inputEl.value) || 0;
+
+            dhParams[idx][field] = val;
+            trailPoints = [];
+
+            const sliderEl = document.getElementById(`slider-${field}-${idx}`);
+            const labelEl = document.getElementById(`val-${field}-${idx}`);
+            if (sliderEl) sliderEl.value = val;
+            if (labelEl) labelEl.textContent = field === 'theta' ? `${val}°` : val.toFixed(1);
+
+            update3DScene();
+        }
+
+        function onSliderInput(idx, field, rawVal) {
+            const val = parseFloat(rawVal);
+            dhParams[idx][field] = val;
+
+            if (field === 'a' || field === 'd') {
+                trailPoints = [];
+            }
+
+            const labelEl = document.getElementById(`val-${field}-${idx}`);
+            if (labelEl) labelEl.textContent = field === 'theta' ? `${val}°` : val.toFixed(1);
+
+            const tableInput = document.querySelector(`#dh-table-body input[data-idx="${idx}"][data-field="${field}"]`);
+            if (tableInput) tableInput.value = val;
+
+            update3DScene();
+        }
+
+        function formatMatrixHTML(M, highlightPos = false) {
+            let html = `<div class="matrix-bracket inline-block font-mono text-[11px] bg-slate-900/90 rounded">
+                <table class="border-collapse">`;
+            for (let r = 0; r < 4; r++) {
+                html += `<tr>`;
+                for (let c = 0; c < 4; c++) {
+                    const val = M[r][c];
+                    const formatted = (Math.abs(val) < 1e-4 ? 0 : val).toFixed(3);
+                    let colorClass = 'text-slate-300';
+                    if (c === 3 && r < 3 && highlightPos) {
+                        colorClass = r === 0 ? 'text-rose-400 font-bold' : (r === 1 ? 'text-emerald-400 font-bold' : 'text-sky-400 font-bold');
+                    } else if (r === 3) {
+                        colorClass = 'text-slate-500';
+                    }
+                    html += `<td class="px-2 py-0.5 text-right ${colorClass}">${formatted}</td>`;
+                }
+                html += `</tr>`;
+            }
+            html += `</table></div>`;
+            return html;
+        }
+
+        function updateTelemetryHUD(finalT) {
+            document.getElementById('hud-px').textContent = finalT[0][3].toFixed(2);
+            document.getElementById('hud-py').textContent = finalT[1][3].toFixed(2);
+            document.getElementById('hud-pz').textContent = finalT[2][3].toFixed(2);
+
+            const rpy = extractRPY(finalT);
+            document.getElementById('hud-roll').textContent = `${rpy.roll.toFixed(0)}°`;
+            document.getElementById('hud-pitch').textContent = `${rpy.pitch.toFixed(0)}°`;
+            document.getElementById('hud-yaw').textContent = `${rpy.yaw.toFixed(0)}°`;
+        }
+
+        function renderMatricesUI(individualMatrices, finalT) {
+            const totalHTML = formatMatrixHTML(finalT, true);
+            document.getElementById('full-total-matrix').innerHTML = totalHTML;
+
+            const indivContainer = document.getElementById('individual-matrices-container');
+            indivContainer.innerHTML = '';
+
+            individualMatrices.forEach((Ai, idx) => {
+                const p = dhParams[idx];
+                const card = document.createElement('div');
+                card.className = 'bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1.5';
+                card.innerHTML = `
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span class="font-bold text-indigo-400 font-mono"><sup>${idx}</sup>T<sub>${idx + 1}</sub> = A<sub>${idx + 1}</sub></span>
+                        <span class="text-[11px] font-mono text-slate-400">
+                            θ=${p.theta}°, d=${p.d}, a=${p.a}, α=${p.alpha}°
+                        </span>
+                    </div>
+                    <div class="overflow-x-auto">${formatMatrixHTML(Ai, false)}</div>
+                `;
+                indivContainer.appendChild(card);
+            });
+        }
+
+        // ==========================================
+        // 9. PRESETS, DOF MANAGEMENT & EXPORT
+        // ==========================================
+        function loadPreset(key) {
+            const data = PRESETS[key];
+            if (!data) return;
+            dhParams = JSON.parse(JSON.stringify(data));
+            defaultThetas = dhParams.map(r => r.theta);
+            trailPoints = [];
+            setStepStage(0);
+            rebuildControlsUI();
+            update3DScene();
+            showToast(`โหลดตัวอย่างเรียบร้อย`);
+        }
+
+        function changeDOF(delta) {
+            const newCount = dhParams.length + delta;
+            if (newCount < 1 || newCount > 6) {
+                showToast('รองรับจำนวนแกนตั้งแต่ 1 ถึง 6 แกน');
+                return;
+            }
+            if (delta > 0) {
+                dhParams.push({ theta: 0, d: 0, a: 1.5, alpha: 0 });
+                defaultThetas.push(0);
+            } else {
+                dhParams.pop();
+                defaultThetas.pop();
+            }
+            trailPoints = [];
+            setStepStage(0);
+            rebuildControlsUI();
+            update3DScene();
+        }
+
+        function resetJointAngles() {
+            dhParams.forEach((row, idx) => {
+                row.theta = defaultThetas[idx] !== undefined ? defaultThetas[idx] : 0;
+            });
+            trailPoints = [];
+            rebuildControlsUI();
+            update3DScene();
+            showToast('รีเซ็ตมุม θ ของทุกข้อต่อแล้ว');
+        }
+
+        function exportDHData(format) {
+            if (format === 'csv') {
+                let csv = 'Joint_i,theta_deg,d,a,alpha_deg\n';
+                dhParams.forEach((r, idx) => {
+                    csv += `${idx}-${idx + 1},${r.theta},${r.d},${r.a},${r.alpha}\n`;
+                });
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `DH_Parameters_${dhParams.length}DOF.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('ดาวน์โหลดไฟล์ CSV เรียบร้อย');
+            }
+        }
+
+        function copyTextFallback(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+
+        function copyTotalMatrix() {
+            let currentT = identityMatrix4x4();
+            dhParams.forEach(p => {
+                currentT = multiplyMatrices4x4(currentT, computeDHMatrix(p.theta, p.d, p.a, p.alpha));
+            });
+            const text = currentT.map(row => row.map(v => v.toFixed(4)).join('\t')).join('\n');
+            copyTextFallback(text);
+            showToast('คัดลอกเมทริกซ์ ^R T_H ลงคลิปบอร์ดแล้ว');
+        }
+
+        function resetCamera() {
+            camera.position.set(6.8, 5.8, 8.2);
+            controls.target.set(0, 1.2, 0);
+            controls.update();
+        }
+
+        function openTheoryModal() {
+            const modal = document.getElementById('theory-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeTheoryModal() {
+            const modal = document.getElementById('theory-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').textContent = msg;
+            toast.classList.remove('-translate-y-24', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('-translate-y-24', 'opacity-0');
+            }, 2200);
+        }
+
+        // ==========================================
+        // 10. 2D LABEL PROJECTION & RENDER LOOP
+        // ==========================================
+        function updateLabelsVisibility() {
+            const show = document.getElementById('toggle-labels').checked;
+            labelsContainer.style.display = show ? 'block' : 'none';
+        }
+
+        function updateProjectedLabels() {
+            const show = document.getElementById('toggle-labels').checked;
+            if (!show) return;
+
+            while (labelsContainer.children.length < projectedLabels.length) {
+                const div = document.createElement('div');
+                div.className = 'axis-label';
+                labelsContainer.appendChild(div);
+            }
+            while (labelsContainer.children.length > projectedLabels.length) {
+                labelsContainer.removeChild(labelsContainer.lastChild);
+            }
+
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            projectedLabels.forEach((item, idx) => {
+                const el = labelsContainer.children[idx];
+                const worldPos = item.pos.clone().applyMatrix4(robotWorldGroup.matrixWorld);
+                worldPos.project(camera);
+
+                if (worldPos.z > 1) {
+                    el.style.display = 'none';
+                } else {
+                    el.style.display = 'block';
+                    const x = (worldPos.x * 0.5 + 0.5) * width;
+                    const y = (-worldPos.y * 0.5 + 0.5) * height;
+                    el.style.left = `${x}px`;
+                    el.style.top = `${y}px`;
+                    el.style.color = item.color;
+                    el.style.backgroundColor = item.bg;
+                    el.textContent = item.text;
+                }
+            });
+        }
+
+        function onWindowResize() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            adjustMobileStepPosition();
+        }
+        window.addEventListener('resize', onWindowResize);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            updateProjectedLabels();
+        }
+
+        window.onload = function () {
+            loadPreset('3dof_proj1');
+            // On desktop show both sliders and table by default; on mobile show sliders first
+            if (window.innerWidth >= 640) {
+                switchDHSubView('both');
+            } else {
+                switchDHSubView('sliders');
+                // Close step panel initially on small mobile screens so 3D arm is clearly visible
+                togglePanel('step', false);
+            }
+            onWindowResize();
+            animate();
+        };
+    </script>
+</body>
+</html>
